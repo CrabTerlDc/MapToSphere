@@ -1,9 +1,18 @@
-# seems editable with shares
+# author Crab
+
 try:
     # https://pillow.readthedocs.io/en/4.0.x/reference/Image.html
     from PIL import Image, ImageDraw
 except:
     print ("consider \"pip install Pillow\"")
+
+try:
+    # OpenSource Computer Vision
+    import cv2
+    #from cv2 import VideoWriter, VideoWriter_fourcc, imread, resize
+except:
+    print ("consider \"pip install opencv-python\"")
+    # rem : got "WARNING: The script f2py.exe is installed in 'c:\python38-32\Scripts' which is not on PATH."
 
 try:
     from bigfloat import *
@@ -14,6 +23,10 @@ except:
     Epsilon = 0.000000001
 
 import math
+import time
+
+start_time = time.time()
+pict_time = 0
 
 """ rayon de la sphere en m """
 ThicMaterial=Pr+2.8/1000.0
@@ -26,7 +39,7 @@ SphBaseCut = 0.5
 # TODO_LATER : to and from a file
 Params={}
 Params['PosVP'] = {} # (pointFocal) 4K UHD (youtube)
-Params['PosVP']['Focal'] = ( 0.0, -(2.5+6.0), 2.5) # retrait de 6m a 2.5m de haut
+Params['PosVP']['Focal'] = ( 0.0, -(2.5+6.0), 3) # retrait de 6m a 3m de haut
 #Params['PosVP']['Focal'] = ( 0.0, -(2.5+6.0), 4) # retrait de 6m a 4m de haut
 #Params['PosVP']['Visee'] = ( 0.0, 0.0, (3.0-0.5)/2.0) # hauteur de visée à revoir suivant decoupe de sphere
 Params['PosVP']['Visee'] = ( 0.0, 0.0, 0.5) # hauteur de visée à revoir suivant decoupe de sphere .. TODO_HERE something rotten, does not move as expected
@@ -34,11 +47,18 @@ Params['PosVP']['Up'] = ( 0.0, 0.0, 1.0) # Up vector
 Params['PosVP']['d'] = 0.5 # ecran de coupe a 50 cm
 
 #Params['Source']="../../../SourceMedia/stsci-h-p1936b-f-3600x1800.jpg"
-Params['Source']="../../../SourceMedia/MOLA_mercat.jpg"
+Params['Source']="../../../SourceMedia/MOLA_mercat_redim.jpg"
+#Params['Source']="../../../SourceMedia/2kjKZ.png"
+#Params['Source']="../../../SourceMedia/Grid.png"
 
-Params['ResultSize'] = ( 3840,2160) # (x,y) 4K UHD (youtube)
-#Params['ResultSize'] = ( 1280,720) # (x,y) HD Ready
-#Params['ResultSize'] = ( 720, 480) # (x,y) DVD ... good enough for tests
+#Params['ResultSize'] = ( 3840, 2160) # (x,y) 4K UHD (youtube)
+Params['ResultSize'] = ( 1920, 1080) # (x,y) Full Hd
+#Params['ResultSize'] = ( 1280,  720) # (x,y) HD Ready
+#Params['ResultSize'] = ( 720,  480) # (x,y) DVD ... good enough for tests
+#Params['ResultSize'] = ( 72,  48)
+
+Params['ResultFps'] = 25
+Params['ResultDuration'] = 60 # 1 min
 
 #----------- math section
 Pi = math.pi
@@ -79,21 +99,32 @@ def AngulToScal(Alpha, Beta, R=1):
           , R * math.sin(Beta)
           )
 
-def ScalToAngul( Pt):
+def ScalToAngul( Pt, Plane=None):
     """ polar coordinates from center (0,0,0) X direction (1,0,0) in 0,0 """
     (x,y,z) = Pt
-    #T = PerpendiculairePointPlan( Pt, ( (0,0,0), (1,0,0), (0,1,0) ))
-    T = ( x, y, 0)
+    if Plane is None:
+        T = ( x, y, 0)
+        #T = PerpendiculairePointPlan( Pt, ( (0,0,0), (1,0,0), (0,1,0) ))
+    else:
+        T = PerpendiculairePointPlan( Pt, Plane)
     if (Norm(T) <= Epsilon):
         Alpha = 0
         Beta = Pi/2.0
     else:
-        Alpha = VectorAngle( (1.0,0.0,0.0), T)
-        Beta = VectorAngle( Pt, T)
-    if (T[1] < 0):
-        Alpha = 2.0*Pi-Alpha
-    if (Pt[2] < 0):
-        Beta = -Beta
+        if Plane is None:
+            Alpha = VectorAngle( (1.0,0.0,0.0), T)
+            Beta = VectorAngle(Pt, T)
+            if (T[1] < 0):
+                Alpha = 2.0 * Pi - Alpha
+            if (Pt[2] < 0):
+                Beta = -Beta
+        else:
+            Alpha = VectorAngle(Plane[1], T)
+            Beta = VectorAngle( Pt, T)
+            if (PerpendiculaireKPointDroite( Pt, (Plane[0], Plane[1])) < 0):
+                Alpha = 2.0 * Pi - Alpha
+            if (PerpendiculaireKPointDroite(Pt, (Plane[1], Plane[2])) < 0): # TODO_HERE : as usual check direction
+                Beta = -Beta
     R = Norm(Pt)
     return( Alpha, Beta, R)
 
@@ -319,6 +350,42 @@ def Map( V, S1, S2, D1, D2):
        b = D1 - a * S1
     return(a*V+b)
 
+
+def StrDuration( Seconds):
+    """ convert seconds in something a human can apprehend"""
+    OrgSec = Seconds
+    Str = ""
+    St = False
+    Seg = 3600*24 # j
+    if (Seconds > Seg or St):
+        Tmp = math.floor( Seconds / Seg)
+        Str += "%ij" % Tmp
+        Seconds -= Tmp* Seg
+        St = True
+    Seg = 3600 # H
+    if (Seconds > Seg or St):
+        Tmp = math.floor( Seconds / Seg)
+        Str += "%2.2iH" % Tmp
+        Seconds -= Tmp* Seg
+        St = True
+    Seg = 60 # min
+    if (Seconds > Seg or St):
+        Tmp = math.floor( Seconds / Seg)
+        Str += "%2.2i:" % Tmp
+        Seconds -= Tmp* Seg
+        St = True
+    Seg = 1
+    if(1):
+        Tmp = math.floor( Seconds / Seg)
+        if (St):
+            Str += "%2.2is" % Tmp
+        else:
+            Str += "%is" % Tmp
+        Seconds -= Tmp* Seg
+    if (St):
+        Str += "(%i)" % OrgSec
+
+    return( Str)
 #--------------- projecteur
 # le plan de projection c'est un point central un vecteurs droite et un vecteur haut
 
@@ -326,10 +393,10 @@ VPFocal = Params['PosVP']['Focal']
 VTmp = Vector( VPFocal, Params['PosVP']['Visee'])
 VPPtCenter = AddScal( VPFocal, VectSetNorm( VTmp, Params['PosVP']['d']))
 VPUp = Params['PosVP']['Up']
-VPVectDroite = ProdVectoriel( VPPtCenter, VPUp)
+VPVectDroite = ProdVectoriel( VPUp, VPPtCenter)
 VPVectDroite = VectSetNorm( VPVectDroite) # vect d'1 metre
 VpPtDroite = AddScal( VPPtCenter, VPVectDroite)
-VPVectUp = ProdVectoriel( VPVectDroite, VPPtCenter)
+VPVectUp = ProdVectoriel( VPPtCenter, VPVectDroite)
 VPVectUp = VectSetNorm( VPVectUp)
 VpPtUp = AddScal( VPPtCenter, VPVectUp)
 
@@ -349,7 +416,7 @@ ResultDy = 0
 
 def Project2D( Pt3D):
     """ 2D screen coordinate projection in pixels of a point of the 3D scene """
-    PtScr = IntersecPlanDroite((VPPtCenter, VpPtDroite, VpPtUp), (VPFocal, PtSph))
+    PtScr = IntersecPlanDroite((VPPtCenter, VpPtDroite, VpPtUp), (VPFocal, Pt3D))
     PtX = PerpendiculaireKPointDroite(PtScr, (VPPtCenter, VpPtDroite))
     PtY = PerpendiculaireKPointDroite(PtScr, (VPPtCenter, VpPtUp))
     PtX = ResultF*PtX + ResultDx
@@ -359,8 +426,7 @@ def Project2D( Pt3D):
 
 
 def SourceGetColor(Alpha, Beta):
-    if (Alpha < 0):
-        Alpha = Alpha + 2.0*Pi
+    ( Alpha, Beta) = AngulModulus( Alpha, Beta)
     X = Map( Alpha, 0, 2*Pi, 0, ImageSourceSize[0])
     Y = Map( Beta , Pi/2.0, -Pi/2.0, 0, ImageSourceSize[1])
     Color = ImageSource.getpixel( (X,Y))
@@ -389,6 +455,15 @@ def IntersecDroiteSphereNear( VPFocal, PtScr):
 
     return( (Alpha,Beta))
 
+def AngulModulus( Alpha, Beta):
+    """ rebound angles"""
+    Alpha = Alpha % Pi
+    if(Beta < -Pi/2.0):
+        Beta  = -Pi/2.0
+    if(Beta > Pi/2.0):
+        Beta  = Pi/2.0
+    return( (Alpha,Beta))
+
 # automatic scale for picture to fit the destination image
 PtSph = AngulToScal(0, 0, Ray)
 (PtX, PtY) = Project2D( PtSph)
@@ -398,69 +473,117 @@ F1= abs(PtY)
 if (F1 > F):
     F = F1
 
-Mx = F*1.01 # length of VPVectDroite mapped to the screen
+Mx = F*0.90 # length of VPVectDroite mapped to the screen
 ResultF = (Params['ResultSize'][1]/2.0) / Mx # en pix/m
 ResultDx = Params['ResultSize'][0]/2.0
 ResultDy = Params['ResultSize'][1]/2.0
 
 BetaBase = -math.asin(SphBaseCut/Ray)
 
-Segs = 100.0
-Beta=BetaBase
-while ( Beta < Pi/2.0):
-    Beta2 = Beta + Pi/Segs
-    Alpha = Pi
-    while( Alpha < 2*Pi):
-        Alpha2 = Alpha + Pi/(2*Segs)
+AddAlpha = 0
+DBeta = 0
 
-        Color = SourceGetColor( Alpha, Beta)
+def DirectTrace():
+    Segs = 50.0
+    Beta=BetaBase
+    while ( Beta < Pi/2.0):
+        Beta2 = Beta + Pi/Segs
+        Alpha = Pi
+        while( Alpha < 2*Pi):
+            Alpha2 = Alpha + Pi/(2*Segs)
 
-        PtSph = AngulToScal( Alpha, Beta, Ray)
-        Chk = ScalToAngul(PtSph)
-        #if ( abs(Chk[0]-Alpha) > Epsilon):
-        #    print("Bad Alpha");
-        #if ( abs(Chk[1]-Beta) > Epsilon):
-        #    print("Bad Beta");
+            Color = SourceGetColor( Alpha+AddAlpha, Beta)
 
-        (PtX, PtY) = Project2D( PtSph)
-        ImageResultDraw.line( (PtX, PtY, PtX+1, PtY+1), fill=Color, width=10)
+            PtSph = AngulToScal( Alpha, Beta, Ray)
+            #Chk = ScalToAngul(PtSph)
+            #if ( abs(Chk[0]-Alpha) > Epsilon):
+            #    print("Bad Alpha");
+            #if ( abs(Chk[1]-Beta) > Epsilon):
+            #    print("Bad Beta");
 
-        Alpha = Alpha2
-    Beta = Beta2
-#ImageResult.show()
+            (PtX, PtY) = Project2D( PtSph)
+            ImageResultDraw.line( (PtX, PtY, PtX+1, PtY+1), fill=Color, width=10)
 
-# brutal raytrace
-Sth = 0
-X = 0
-while(X < 2*ResultDx):
-    Vx = Map(X, 0, 2*ResultDx, -Mx*ResultDx/ResultDy, Mx*ResultDx/ResultDy)
-    Y = 0
-    while(Y < 2*ResultDy):
-        if (X==ResultDx and Y==ResultDy):
+            Alpha = Alpha2
+        Beta = Beta2
+    #ImageResult.show()
+
+def RayTrace():
+    global pict_time
+    rt_start_time = time.time()
+    Sth = 0
+    X = 0
+    while(X < 2*ResultDx):
+        Vx = Map(X, 0, 2*ResultDx, -Mx*ResultDx/ResultDy, Mx*ResultDx/ResultDy)
+        Y = 0
+        while(Y < 2*ResultDy):
+            if (X==ResultDx and Y==ResultDy):
+                #ImageResult.show()
+                print("Yoo")
+            Vy = Map(Y, 0, 2*ResultDy, Mx, -Mx)
+            VScrX = VectSetNorm( VPVectDroite, Vx) # Y is the ref to keep square pix
+            VScrY = VectSetNorm(VPVectUp, Vy)
+            PtScr = AddScal( AddScal( VPPtCenter, VScrX), VScrY)
+            Res = IntersecDroiteSphereNear( VPFocal, PtScr)
+            if (len(Res) >= 2):
+                Color = SourceGetColor( Res[0]+AddAlpha, Res[1]+DBeta)
+                #ImageResult.putpixel( X, Y, Color)
+                ImageResultDraw.point( (X, Y), Color)
+                #ImageResultDraw.line((X, Y, X + 1, Y + 1), fill=Color, width=2)
+                Sth = Sth + 1
+            else:
+                ImageResultDraw.point( (X, Y), ( 0, 0, 0))
+                Sth = Sth + 0
+            Y = Y+1
+        if (Sth > 100000):
             #ImageResult.show()
-            print("Yoo")
-        Vy = Map(Y, 0, 2*ResultDy, Mx, -Mx)
-        VScrX = VectSetNorm( VPVectDroite, Vx) # Y is the ref to keep square pix
-        VScrY = VectSetNorm(VPVectUp, Vy)
-        PtScr = AddScal( AddScal( VPPtCenter, VScrX), VScrY)
-        Res = IntersecDroiteSphereNear( VPFocal, PtScr)
-        if (len(Res) >= 2):
-            Color = SourceGetColor( Res[0], Res[1])
-            #ImageResult.putpixel( X, Y, Color)
-            ImageResultDraw.point( (X, Y), Color)
-            #ImageResultDraw.line((X, Y, X + 1, Y + 1), fill=Color, width=2)
-            Sth = Sth + 1
-        else:
-            ImageResultDraw.point( (X, Y), ( 0, 0, 0))
-            Sth = Sth + 0
-        Y = Y+1
-    if (Sth > 100000):
-        #ImageResult.show()
-        print(".");
-        Sth = 0
-    X = X+1
+            print(".")
+            Sth = 0
+        X = X+1
+    pict_time = time.time() - rt_start_time
 
+
+#RayTrace()
+#ImgR0 =ImageResult.copy()
+
+outvid = "../../../ResultMedia/result.avi"
+fps = Params['ResultFps']
+ImgsMax = fps*Params['ResultDuration']
+dAlpha = (2.0*Pi)/(ImgsMax*1.0)
+
+if (1):
+    size = None
+    is_color = True
+    format = "XVID"
+    vid = None
+    fourcc = cv2.VideoWriter_fourcc(*format)
+
+ImgIdx = 0
+while(ImgIdx < ImgsMax):
+    AddAlpha = AddAlpha + dAlpha
+    #DirectTrace()
+    RayTrace()
+    ImgIdx = ImgIdx + 1
+    ImageResult.save('../../../ResultMedia/Result.jpeg', 'jpeg')
+
+    print("Image %i/%i %2.2f%% r%f takes %s possib remains %s" % (ImgIdx, ImgsMax, 100*ImgIdx/(ImgsMax*1.0), AddAlpha*360/(2.0*Pi)
+                                                           , StrDuration (pict_time), StrDuration ((ImgsMax-ImgIdx)*pict_time)))
+
+    # http://www.xavierdupre.fr/blog/2016-03-30_nojs.html
+    # http://www.fourcc.org/codecs.php
+    # http://opencv-python-tutroals.readthedocs.org/en/latest/py_tutorials/py_gui/py_video_display/py_video_display.html
+    if (1):
+        img = cv2.imread('../../../ResultMedia/Result.jpeg')
+        if vid is None:
+            if size is None:
+                size = (img.shape[1], img.shape[0])
+            vid = cv2.VideoWriter( outvid, fourcc, float(fps), size, is_color)
+        if size[0] != img.shape[1] and size[1] != img.shape[0]:
+            img = cv2.resize(img, size)
+        vid.write(img)
+vid.release()
 #----------- Produce result
 ImageResult.show()
 
-ImageResult.save('../../../ResultMedia/Result.jpeg', 'jpeg')
+print( "Done in %s" % StrDuration(time.time() - start_time))
+
