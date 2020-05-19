@@ -1,4 +1,14 @@
-# author Crab
+# author  - Crab
+# License - LGPLv3 - www.gnu.org/licenses/lgpl-3.0.html
+
+import os
+import glob
+from multiprocessing import Pool, cpu_count
+
+Processes=cpu_count()
+#Processes=1 # for dev it's easier
+if (Processes <= 1):
+    Processes = 1
 
 try:
     # https://pillow.readthedocs.io/en/4.0.x/reference/Image.html
@@ -23,10 +33,13 @@ except:
     Epsilon = 0.000000001
 
 import math
+Pi = math.pi
+
 import time
 
 start_time = time.time()
 pict_time = 0
+
 
 """ rayon de la sphere en m """
 ThicMaterial=Pr+2.8/1000.0
@@ -46,22 +59,31 @@ Params['PosVP']['Visee'] = ( 0.0, 0.0, 0.5) # hauteur de visée à revoir suivan
 Params['PosVP']['Up'] = ( 0.0, 0.0, 1.0) # Up vector
 Params['PosVP']['d'] = 0.5 # ecran de coupe a 50 cm
 
-#Params['Source']="../../../SourceMedia/stsci-h-p1936b-f-3600x1800.jpg"
-Params['Source']="../../../SourceMedia/MOLA_mercat_redim.jpg"
-#Params['Source']="../../../SourceMedia/2kjKZ.png"
-#Params['Source']="../../../SourceMedia/Grid.png"
+Params['SourcePath']="../../../SourceMedia/"
+Params['DestPath'] = "../../../ResultMedia/"
+
+#Params['Source']="stsci-h-p1936b-f-3600x1800.jpg"
+#Params['Source']="MOLA_mercat_redim.jpg"
+#Params['Source']="MOLA_cylin.jpg"
+#Params['Source']="2kjKZ.png"
+Params['Source']="Vaches_de_race_montbéliarde.jpg"
+#Params['Source']="Grid.png"
 
 #Params['ResultSize'] = ( 3840, 2160) # (x,y) 4K UHD (youtube)
-Params['ResultSize'] = ( 1920, 1080) # (x,y) Full Hd
+#Params['ResultSize'] = ( 1920, 1080) # (x,y) Full Hd
 #Params['ResultSize'] = ( 1280,  720) # (x,y) HD Ready
-#Params['ResultSize'] = ( 720,  480) # (x,y) DVD ... good enough for tests
-#Params['ResultSize'] = ( 72,  48)
+Params['ResultSize'] = (  720,  480) # (x,y) DVD ... good enough for tests
+#Params['ResultSize'] = (  360,  240) # SD
+#Params['ResultSize'] = (  180,  120)
+#Params['ResultSize'] = (  72,  48)
+
+Params['AxisTilt'] = 25.19*2*Pi/360 # mars tilt axis
 
 Params['ResultFps'] = 25
-Params['ResultDuration'] = 60 # 1 min
+Params['ResultDuration'] = 4*60 # 4 min long video, accelerate on video edition if required
+Params['dAlpha'] = -(2.0*Pi)/(Params['ResultFps']*Params['ResultDuration']*1.0) # counterclockwise rotation like earth  and most planets except venus, uranus, neptune
 
 #----------- math section
-Pi = math.pi
 
 def Dist(x, y, z):
     """
@@ -107,6 +129,7 @@ def ScalToAngul( Pt, Plane=None):
         #T = PerpendiculairePointPlan( Pt, ( (0,0,0), (1,0,0), (0,1,0) ))
     else:
         T = PerpendiculairePointPlan( Pt, Plane)
+        Ht = ProdVectoriel( Vector(Plane[0], Plane[1]), Vector(Plane[0], Plane[2]))
     if (Norm(T) <= Epsilon):
         Alpha = 0
         Beta = Pi/2.0
@@ -121,9 +144,9 @@ def ScalToAngul( Pt, Plane=None):
         else:
             Alpha = VectorAngle(Plane[1], T)
             Beta = VectorAngle( Pt, T)
-            if (PerpendiculaireKPointDroite( Pt, (Plane[0], Plane[1])) < 0):
+            if (PerpendiculaireKPointDroite( Pt, (Plane[0], Plane[2])) < 0):
                 Alpha = 2.0 * Pi - Alpha
-            if (PerpendiculaireKPointDroite(Pt, (Plane[1], Plane[2])) < 0): # TODO_HERE : as usual check direction
+            if (PerpendiculaireKPointDroite(Pt, (Plane[0], AddScal( Plane[0], Ht))) < 0): # TODO_HERE : as usual check direction
                 Beta = -Beta
     R = Norm(Pt)
     return( Alpha, Beta, R)
@@ -383,7 +406,7 @@ def StrDuration( Seconds):
             Str += "%is" % Tmp
         Seconds -= Tmp* Seg
     if (St):
-        Str += "(%i)" % OrgSec
+        Str += "(%is)" % OrgSec
 
     return( Str)
 #--------------- projecteur
@@ -402,7 +425,7 @@ VpPtUp = AddScal( VPPtCenter, VPVectUp)
 
 #----------- image manip
 #image = ImageSource.open("C:/Users/emman/Google Drive/Op/SphereByTriangle/Projection/SourceMedia/stsci-h-p1936b-f-3600x1800.jpg")
-ImageSource = Image.open(Params['Source'])
+ImageSource = Image.open(Params['SourcePath']+Params['Source'])
 ImageSourcePx = ImageSource.load()
 ImageSourceSize = ImageSource.size
 
@@ -424,12 +447,59 @@ def Project2D( Pt3D):
 
     return( PtX, PtY)
 
+def SourceGetColor( Alpha, Gamma, Beta, Delta, Tilt = 0):
+    """ Get color under a point given it's polar coordinates on the sphere
+        (Alpha+Gamma, Beta) - coordinates to map on the ... map
+        Gamma is rotation around the axis
+        Tilt inclination of the axis around Y
+        Delta - the size of the dot (or an indication of)  """
+    if (Delta < 0):
+        Delta = 0
+    if (0 != Tilt):
+        Pt = AngulToScal( Alpha, Beta, )
+        (Alpha, Beta, Rtmp) = ScalToAngul( Pt, ( (0,0,0), (math.cos(Tilt),0,-math.sin(Tilt)), (0,1,0) ))
+    (Alpha, Beta) = AngulModulus(Alpha + Gamma, Beta)
 
-def SourceGetColor(Alpha, Beta):
-    ( Alpha, Beta) = AngulModulus( Alpha, Beta)
     X = Map( Alpha, 0, 2*Pi, 0, ImageSourceSize[0])
     Y = Map( Beta , Pi/2.0, -Pi/2.0, 0, ImageSourceSize[1])
-    Color = ImageSource.getpixel( (X,Y))
+    X2 = Map( Alpha+Delta, 0, 2*Pi, 0, ImageSourceSize[0])
+    Y2 = Map( Beta+Delta , Pi/2.0, -Pi/2.0, 0, ImageSourceSize[1])
+    dX = abs( X-X2)
+    dY = abs( Y-Y2)
+    QColor = 0.0
+    Cr = 0
+    Cg = 0
+    Cb = 0
+    Lim = 5
+    if (dX > 2 and dY > 2):
+        if(dX > Lim):
+            Px = dX/Lim
+        else:
+            Px = 1
+        if(dY > Lim):
+            Py = dY/Lim
+        else:
+            Py = 1
+        DQ = 0
+        Mx = X
+        while(Mx<X+dX and Mx<ImageSourceSize[0]):
+            My = Y
+            while(My < Y+dY and My<ImageSourceSize[1]):
+                Color2 = ImageSource.getpixel((Mx, My))
+                Cr += Color2[0]
+                Cg += Color2[1]
+                Cb += Color2[2]
+                QColor +=1
+                My = My+Py
+            Mx = Mx + Px
+        if (QColor>= 1):
+            Color = (Cr/QColor,Cg/QColor,Cb/QColor)
+        else:
+            Color = ImageSource.getpixel((X, Y))
+    elif ((dX+dY) < 0.5):
+        Color = ImageSource.getpixel((X, Y))
+    else:
+        Color = ImageSource.getpixel( (X,Y))
     return(  Color)
 
 def IntersecDroiteSphereNear( VPFocal, PtScr):
@@ -457,12 +527,24 @@ def IntersecDroiteSphereNear( VPFocal, PtScr):
 
 def AngulModulus( Alpha, Beta):
     """ rebound angles"""
-    Alpha = Alpha % Pi
+    Alpha = Alpha % (2.0*Pi)
     if(Beta < -Pi/2.0):
         Beta  = -Pi/2.0
     if(Beta > Pi/2.0):
         Beta  = Pi/2.0
     return( (Alpha,Beta))
+
+def ColorMix( C1, v1, C2, v2):
+    """ Mix 2 colors  with some kind of barycenter """
+    V12=v1+v2
+    return( ( (C1[0]*v1+C2[0]*v2)/V12
+            , (C1[1]*v1+C2[1]*v2)/V12
+            , (C1[2]*v1+C2[2]*v2)/V12
+          ) )
+
+def ColorFix(C1):
+    """ because real color does not like floats and must be round """
+    return( ( int(C1[0]), int(C1[1]), int(C1[2]) ) )
 
 # automatic scale for picture to fit the destination image
 PtSph = AngulToScal(0, 0, Ray)
@@ -481,109 +563,202 @@ ResultDy = Params['ResultSize'][1]/2.0
 BetaBase = -math.asin(SphBaseCut/Ray)
 
 AddAlpha = 0
-DBeta = 0
+ImgR0 = None
+BackgroundColor = ( 0, 0, 0)
 
-def DirectTrace():
+def DirectTrace( GammaRotation):
+    global pict_time
+    Tilt = Params['AxisTilt']
+    dt_start_time = time.time()
     Segs = 50.0
     Beta=BetaBase
     while ( Beta < Pi/2.0):
-        Beta2 = Beta + Pi/Segs
-        Alpha = Pi
-        while( Alpha < 2*Pi):
-            Alpha2 = Alpha + Pi/(2*Segs)
+        DBet = Pi/Segs
+        Beta2 = Beta + DBet
+        Alp = Pi
+        while( Alp < 2*Pi):
+            DAlph = Pi/(2*Segs)
+            if ( Alp < Pi): # draw left to middle then right to middle
+                Alpha = Pi
+            else:
+                Alpha = -Alp+3.0*Pi
 
-            Color = SourceGetColor( Alpha+AddAlpha, Beta)
+            Color = SourceGetColor( Alpha, GammaRotation, Beta, (DBet+DAlph)/2.0, Tilt)
 
-            PtSph = AngulToScal( Alpha, Beta, Ray)
+            PtSph00 = AngulToScal( Alpha, Beta, Ray)
+            PtSph01 = AngulToScal( Alpha, Beta+DBet, Ray)
+            PtSph11 = AngulToScal( Alpha+DAlph, Beta+DBet, Ray)
+            PtSph10 = AngulToScal( Alpha+DAlph, Beta, Ray)
             #Chk = ScalToAngul(PtSph)
             #if ( abs(Chk[0]-Alpha) > Epsilon):
             #    print("Bad Alpha");
             #if ( abs(Chk[1]-Beta) > Epsilon):
             #    print("Bad Beta");
 
-            (PtX, PtY) = Project2D( PtSph)
-            ImageResultDraw.line( (PtX, PtY, PtX+1, PtY+1), fill=Color, width=10)
+            (PtX00, PtY00) = Project2D( PtSph00)
+            (PtX01, PtY01) = Project2D( PtSph01)
+            (PtX11, PtY11) = Project2D( PtSph11)
+            (PtX10, PtY10) = Project2D( PtSph10)
+            #ImageResultDraw.line( (PtX00, PtY00, PtX11, PtY11), fill=Color, width=5)
+            ImageResultDraw.polygon(  (PtX00, PtY00, PtX01, PtY01, PtX11, PtY11, PtX10, PtY10) , fill=ColorFix(Color)) # TODO_HERE : test
 
-            Alpha = Alpha2
+            Alp = Alp + DAlph
         Beta = Beta2
+    pict_time = time.time() - dt_start_time
     #ImageResult.show()
 
-def RayTrace():
+def OneRay( Vx, Vy):
+    """ Get (Alpha, Beta) on the sphere for a given fraction of right and up Vectoss"""
+    VScrX = VectSetNorm(VPVectDroite, Vx)  # Y is the ref to keep square pix
+    VScrY = VectSetNorm(VPVectUp, Vy)
+    PtScr = AddScal(AddScal(VPPtCenter, VScrX), VScrY)
+    Res = IntersecDroiteSphereNear(VPFocal, PtScr)
+    return( Res)
+
+def RayTrace( GammaRotation):
     global pict_time
+    global ImgR0
+    Tilt = Params['AxisTilt']
     rt_start_time = time.time()
     Sth = 0
     X = 0
     while(X < 2*ResultDx):
         Vx = Map(X, 0, 2*ResultDx, -Mx*ResultDx/ResultDy, Mx*ResultDx/ResultDy)
+        Vx2 = Map(X+1, 0, 2*ResultDx, -Mx*ResultDx/ResultDy, Mx*ResultDx/ResultDy)
         Y = 0
         while(Y < 2*ResultDy):
             if (X==ResultDx and Y==ResultDy):
                 #ImageResult.show()
-                print("Yoo")
+                print("Mid", end='', flush=True)
             Vy = Map(Y, 0, 2*ResultDy, Mx, -Mx)
-            VScrX = VectSetNorm( VPVectDroite, Vx) # Y is the ref to keep square pix
-            VScrY = VectSetNorm(VPVectUp, Vy)
-            PtScr = AddScal( AddScal( VPPtCenter, VScrX), VScrY)
-            Res = IntersecDroiteSphereNear( VPFocal, PtScr)
+            Vy2 = Map(Y+1, 0, 2*ResultDy, Mx, -Mx)
+            if (1): # TODO_LATER : first test it acts the same and not too slow
+                Res = OneRay( Vx, Vy)
+            else :
+                VScrX = VectSetNorm( VPVectDroite, Vx) # Y is the ref to keep square pix
+                VScrY = VectSetNorm(VPVectUp, Vy)
+                PtScr = AddScal( AddScal( VPPtCenter, VScrX), VScrY)
+                Res = IntersecDroiteSphereNear( VPFocal, PtScr)
+            D = -1
             if (len(Res) >= 2):
-                Color = SourceGetColor( Res[0]+AddAlpha, Res[1]+DBeta)
+                if (1):
+                    Res2 = OneRay(Vx2, Vy2)
+                    if (len(Res2) >= 2):
+                        D = (abs(Res[0] - Res2[0]) + abs(Res[1] - Res2[1])) / 2.0
+                Color = SourceGetColor( Res[0], GammaRotation, Res[1], D, Tilt)
                 #ImageResult.putpixel( X, Y, Color)
-                ImageResultDraw.point( (X, Y), Color)
+                if( None != ImgR0):
+                    Color2 = ImgR0.getpixel( (X,Y))
+                    Color = ColorFix( ColorMix ( Color, 1, Color2, -1))
+                ImageResultDraw.point( (X, Y), ColorFix(Color))
                 #ImageResultDraw.line((X, Y, X + 1, Y + 1), fill=Color, width=2)
                 Sth = Sth + 1
             else:
-                ImageResultDraw.point( (X, Y), ( 0, 0, 0))
+                ImageResultDraw.point( (X, Y), BackgroundColor)
                 Sth = Sth + 0
             Y = Y+1
         if (Sth > 100000):
             #ImageResult.show()
-            print(".")
+            print(".", end='', flush=True)
             Sth = 0
         X = X+1
+    # ImgR0 = ImageResult.copy() # moyenner evite 50% le grain mais pas suffisant pour faire le flou de mouvement
+    #print("-")
     pict_time = time.time() - rt_start_time
 
 
-#RayTrace()
-#ImgR0 =ImageResult.copy()
+#RayTrace( AddAlpha)
 
-outvid = "../../../ResultMedia/result.avi"
-fps = Params['ResultFps']
-ImgsMax = fps*Params['ResultDuration']
-dAlpha = (2.0*Pi)/(ImgsMax*1.0)
+def PictAndVid( ImgIdxStart, ImgModul):
+    ImgsMax = Params['ResultFps'] * Params['ResultDuration']
+    dAlpha = Params['dAlpha']
+    outvid = Params['DestPath']+"result.avi"
+    fps = Params['ResultFps']
+    pict_time_R0 = None
+    ImgVidIdx = 0
 
-if (1):
-    size = None
-    is_color = True
-    format = "XVID"
     vid = None
-    fourcc = cv2.VideoWriter_fourcc(*format)
+    if (0 == ImgIdxStart):
+        size = None
+        is_color = True
+        format = "XVID"
+        fourcc = cv2.VideoWriter_fourcc(*format)
 
-ImgIdx = 0
-while(ImgIdx < ImgsMax):
-    AddAlpha = AddAlpha + dAlpha
-    #DirectTrace()
-    RayTrace()
-    ImgIdx = ImgIdx + 1
-    ImageResult.save('../../../ResultMedia/Result.jpeg', 'jpeg')
+    ImgIdx = ImgIdxStart
+    while(ImgIdx < ImgsMax):
+        AddAlpha = ImgIdx * dAlpha
+        #DirectTrace( AddAlpha)
+        RayTrace( AddAlpha)
+        ImageResult.save(Params['DestPath']+'Result_%i.jpeg' % ImgIdx, 'jpeg')
+        ImgIdx += 1
 
-    print("Image %i/%i %2.2f%% r%f takes %s possib remains %s" % (ImgIdx, ImgsMax, 100*ImgIdx/(ImgsMax*1.0), AddAlpha*360/(2.0*Pi)
-                                                           , StrDuration (pict_time), StrDuration ((ImgsMax-ImgIdx)*pict_time)))
+        if (None == pict_time_R0):
+            pict_time_R0 = pict_time
+        pict_time_R0 = (pict_time_R0*3+pict_time)/4
+        print("pr %i Image %i/%i %2.2f%% r%f takes %s possib remains %s" % ( ImgIdxStart, ImgIdx, ImgsMax, 100*ImgIdx/(ImgsMax*1.0), AddAlpha*360/(2.0*Pi)
+                                                               , StrDuration (pict_time), StrDuration ((ImgsMax-ImgIdx)*pict_time_R0/ImgModul)))
 
-    # http://www.xavierdupre.fr/blog/2016-03-30_nojs.html
-    # http://www.fourcc.org/codecs.php
-    # http://opencv-python-tutroals.readthedocs.org/en/latest/py_tutorials/py_gui/py_video_display/py_video_display.html
-    if (1):
-        img = cv2.imread('../../../ResultMedia/Result.jpeg')
-        if vid is None:
-            if size is None:
-                size = (img.shape[1], img.shape[0])
-            vid = cv2.VideoWriter( outvid, fourcc, float(fps), size, is_color)
-        if size[0] != img.shape[1] and size[1] != img.shape[0]:
-            img = cv2.resize(img, size)
-        vid.write(img)
-vid.release()
-#----------- Produce result
-ImageResult.show()
+        if (ImgModul > 1):
+            ImgIdx += (ImgModul - 1)
+        # http://www.xavierdupre.fr/blog/2016-03-30_nojs.html
+        # http://www.fourcc.org/codecs.php
+        # http://opencv-python-tutroals.readthedocs.org/en/latest/py_tutorials/py_gui/py_video_display/py_video_display.html
+        if (0 == ImgIdxStart): # only for process 1
+            ImageResult.save(Params['DestPath']+'Result.jpeg', 'jpeg') # must see intermediate result
+            while (ImgVidIdx < ImgIdx and ImgVidIdx < ImgsMax):
+                Found = False
+                img = None
+                while(not Found):
+                    try:
+                        img = cv2.imread(Params['DestPath']+'Result_%i.jpeg' % ImgVidIdx)
+                        if (not( img is None)):
+                            Found = True
+                        else:
+                            print( "Sleep a while to wait for pic %i" % ImgVidIdx);
+                            time.sleep(4)
+                    except:
+                        print( "Sleep a while to wait for pic %i" % ImgVidIdx);
+                        time.sleep(4)
+                if vid is None:
+                    if size is None:
+                        size = (img.shape[1], img.shape[0])
+                    vid = cv2.VideoWriter( outvid, fourcc, float(fps), size, is_color)
+                if size[0] != img.shape[1] and size[1] != img.shape[0]:
+                    img = cv2.resize(img, size)
+                vid.write(img)
+                os.remove("%sResult_%i.jpeg" % (Params['DestPath'], ImgVidIdx))
+                print("Integrated pic %i" % ImgVidIdx);
+                ImgVidIdx += 1
+    if not(vid is None):
+        vid.release()
+    #----------- Produce result
+    #ImageResult.show()
 
-print( "Done in %s" % StrDuration(time.time() - start_time))
 
+def ProcessMe( PrNum):
+    if(0 == PrNum):
+        print( "I'll Own Video")
+        PictAndVid( PrNum, Processes)
+    else:
+        print( "I'm process %i" % PrNum)
+        PictAndVid( PrNum, Processes)
+
+
+if __name__ == '__main__':
+    FileList = glob.glob("%sResult_*.jpeg" % (Params['DestPath']))
+    for filePath in FileList:
+        try:
+            os.remove(filePath)
+        except:
+            print("Error while deleting file : ", filePath)
+    if (Processes>1):
+        ListArgs=[0,]
+        Idx = 1
+        while( Idx < Processes):
+            ListArgs = ListArgs + [Idx,]
+            Idx += 1
+        with Pool(Processes) as p:
+            p.map(ProcessMe, ListArgs)
+    else:
+        ProcessMe(0)
+    print( "Done in %s" % StrDuration(time.time() - start_time))
