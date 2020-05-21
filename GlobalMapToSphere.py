@@ -1,5 +1,6 @@
 # author  - Crab
 # License - LGPLv3 - www.gnu.org/licenses/lgpl-3.0.html
+# github https://github.com/CrabTerlDc/MapToSphere.git/trunk/GlobalMapToSphere.py
 
 import os
 import glob
