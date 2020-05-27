@@ -491,6 +491,23 @@ def Project2D( Pt3D):
 
     return( PtX, PtY)
 
+def TexturePos( Alpha, Beta, Gamma, Tilt)
+    if (0 != Tilt):
+        Pt = AngulToScal( Alpha, Beta, )
+        (Alpha, Beta, Rtmp) = ScalToAngul( Pt, ( (0,0,0), (math.cos(Tilt),0,-math.sin(Tilt)), (0,1,0) ))
+    (Alpha, Beta) = AngulModulus(Alpha + Gamma, Beta)
+        
+    X00 = Map( Alpha      , 0, 2*Pi, 0, 1)
+    Y00 = Map( Beta       , Pi/2.0, -Pi/2.0, 0, 1)
+    X01 = Map( Alpha      , 0, 2*Pi, 0, 1)
+    Y01 = Map( Beta+DBet  , Pi/2.0, -Pi/2.0, 0, 1)
+    X11 = Map( Alpha+DAlph, 0, 2*Pi, 0, 1)
+    Y11 = Map( Beta+DBet  , Pi/2.0, -Pi/2.0, 0, 1)
+    X10 = Map( Alpha+DAlph, 0, 2*Pi, 0, 1)
+    Y10 = Map( Beta       , Pi/2.0, -Pi/2.0, 0, 1)
+
+    return( ( X00, Y00))
+
 def SourceGetColor( Alpha, Gamma, Beta, Delta, Tilt = 0):
     """ Get color under a point given it's polar coordinates on the sphere
         (Alpha+Gamma, Beta) - coordinates to map on the ... map
@@ -627,6 +644,8 @@ def DirectTrace( GammaRotation):
             else:
                 Alpha = -Alp+3.0*Pi
 
+            Color = SourceGetColor( Alpha, GammaRotation, Beta, (DBet+DAlph)/2.0, Tilt)
+
             PtSph00 = AngulToScal( Alpha, Beta, Ray)
             PtSph01 = AngulToScal( Alpha, Beta+DBet, Ray)
             PtSph11 = AngulToScal( Alpha+DAlph, Beta+DBet, Ray)
@@ -649,28 +668,23 @@ def DirectTrace( GammaRotation):
     pict_time = time.time() - dt_start_time
     #ImageResult.show()
 
-def ProcessingTrace( GammaRotation):
+def ProcessingTrace( GammaRotation, Tilt):
     global pict_time
     Tilt = Params['AxisTilt']
     dt_start_time = time.time()
-    Segs = 15.0
+    Segs = 30.0
     Beta=BetaBase
 
     beginShape(QUADS)
     texture(tex)
 
+    DBet = Pi/Segs
+    DAlph = Pi/(2*Segs)
     while ( Beta < Pi/2.0):
-        DBet = Pi/Segs
         Beta2 = Beta + DBet
-        Alp = Pi
+        Alp = 0
         while( Alp < 2*Pi):
-            DAlph = Pi/(2*Segs)
-            if ( Alp < Pi): # draw left to middle then right to middle
-                Alpha = Pi
-            else:
-                Alpha = -Alp+3.0*Pi
-
-            Color = SourceGetColor( Alpha, GammaRotation, Beta, (DBet+DAlph)/2.0, Tilt)
+            Alpha = Alp
 
             PtSph00 = AngulToScal( Alpha, Beta, Ray)
             PtSph01 = AngulToScal( Alpha, Beta+DBet, Ray)
@@ -681,14 +695,11 @@ def ProcessingTrace( GammaRotation):
             #    print("Bad Alpha");
             #if ( abs(Chk[1]-Beta) > Epsilon):
             #    print("Bad Beta");
-            X00 = Map( Alpha      , 0, 2*Pi, 0, 1)
-            Y00 = Map( Beta       , Pi/2.0, -Pi/2.0, 0, 1)
-            X01 = Map( Alpha      , 0, 2*Pi, 0, 1)
-            Y01 = Map( Beta+DBet  , Pi/2.0, -Pi/2.0, 0, 1)
-            X11 = Map( Alpha+DAlph, 0, 2*Pi, 0, 1)
-            Y11 = Map( Beta+DBet  , Pi/2.0, -Pi/2.0, 0, 1)
-            X10 = Map( Alpha+DAlph, 0, 2*Pi, 0, 1)
-            Y10 = Map( Beta       , Pi/2.0, -Pi/2.0, 0, 1)
+
+            ( X00, Y00) = TexturePos( Alpha      , Beta     , GammaRotation, Tilt)
+            ( X01, Y01) = TexturePos( Alpha      , Beta+DBet, GammaRotation, Tilt)
+            ( X11, Y11) = TexturePos( Alpha+DAlph, Beta+DBet, GammaRotation, Tilt)
+            ( X10, Y10) = TexturePos( Alpha+DAlph, Beta     , GammaRotation, Tilt)
 
             #ImageResultDraw.line( (PtX00, PtY00, PtX11, PtY11), fill=Color, width=5)
             #ImageResultDraw.polygon(  (PtX00, PtY00, PtX01, PtY01, PtX11, PtY11, PtX10, PtY10) , fill=ColorFix(Color)) # TODO_HERE : test
@@ -711,10 +722,9 @@ def OneRay( Vx, Vy):
     Res = IntersecDroiteSphereNear(VPFocal, PtScr)
     return( Res)
 
-def RayTrace( GammaRotation):
+def RayTrace( GammaRotation, Tilt):
     global pict_time
     global ImgR0
-    Tilt = Params['AxisTilt']
     rt_start_time = time.time()
     Sth = 0
     X = 0
@@ -764,8 +774,6 @@ def RayTrace( GammaRotation):
     pict_time = time.time() - rt_start_time
 
 
-#RayTrace( AddAlpha)
-
 def PictAndVid( ImgIdxStart, ImgModul):
     ImgsMax = Params['ResultFps'] * Params['ResultDuration']
     dAlpha = Params['dAlpha']
@@ -786,7 +794,7 @@ def PictAndVid( ImgIdxStart, ImgModul):
         AddAlpha = ImgIdx * dAlpha
         #DirectTrace( AddAlpha)
         if WithPil :
-            RayTrace( AddAlpha)
+            RayTrace( AddAlpha, Params['AxisTilt'])
             ImageResult.save(Params['DestPath']+'Result_%i.jpeg' % ImgIdx, 'jpeg')
         ImgIdx += 1
 
@@ -876,49 +884,6 @@ if (WithProcessing):
         roty = PI / 4
         rate = 0.01
 
-def TexturedCube():
-        beginShape(QUADS)
-        texture(tex)
-        # Given one texture and six faces, we can easily set up the uv coordinates
-        # such that four of the faces tile "perfectly" along either u or v, but the other
-        # two faces cannot be so aligned.    This code tiles "along" u, "around" the X / Z faces
-        # and fudges the Y faces - the Y faces are arbitrarily aligned such that a
-        # rotation along the X axis will put the "top" of either texture at the "top"
-        # of the screen, but is not otherwised aligned with the X / Z faces. (This
-        # just affects what type of symmetry is required if you need seamless
-        # tiling all the way around the cube)
-
-        # +Z "front" face
-        vertex(-1, -1, 1, 0, 0.2)
-        vertex(1, -1, 1, 1, 0)
-        vertex(1, 1, 1, 1, 1)
-        vertex(-1, 1, 1, 0, 1)
-        # -Z "back" face
-        vertex(1, -1, -1, 0, 0)
-        vertex(-1, -1, -1, 1, 0)
-        vertex(-1, 1, -1, 1, 1)
-        vertex(1, 1, -1, 0, 1)
-        # +Y "bottom" face
-        vertex(-1, 1, 1, 0, 0)
-        vertex(1, 1, 1, 1, 0)
-        vertex(1, 1, -1, 1, 1)
-        vertex(-1, 1, -1, 0, 1)
-        # -Y "top" face
-        vertex(-1, -1, -1, 0, 0)
-        vertex(1, -1, -1, 1, 0)
-        vertex(1, -1, 1, 1, 1)
-        vertex(-1, -1, 1, 0, 1)
-        # +X "right" face
-        vertex(1, -1, 1, 0, 0)
-        vertex(1, -1, -1, 1, 0)
-        vertex(1, 1, -1, 1, 1)
-        vertex(1, 1, 1, 0, 1)
-        # -X "left" face
-        vertex(-1, -1, -1, 0, 0)
-        vertex(-1, -1, 1, 1, 0)
-        vertex(-1, 1, 1, 1, 1)
-        vertex(-1, 1, -1, 0, 1)
-        endShape()
 
 def setup():
     #if (WithProcessing):
@@ -938,10 +903,10 @@ if (WithProcessing):
             background(0)
             noStroke()
             translate(width / 2.0, height / 2.0, -100)
-            rotateX(rotx)
-            rotateY(roty)
+            rotateX( rotx)
+            rotateY( 0.0)
             scale(90)
-            ProcessingTrace( 0.0)
+            ProcessingTrace( roty, Params['AxisTilt'])
             #TexturedCube()
 
     def mouseDragged():
