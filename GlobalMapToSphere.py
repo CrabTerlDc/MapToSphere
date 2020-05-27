@@ -2,35 +2,71 @@
 # License - LGPLv3 - www.gnu.org/licenses/lgpl-3.0.html
 # github https://github.com/CrabTerlDc/MapToSphere.git/trunk/GlobalMapToSphere.py
 
-import os
-import glob
-from multiprocessing import Pool, cpu_count
+#C:\Users\emman>C:\Python38-32\python.exe -m pip install --upgrade pip
 
-Processes=cpu_count()
-#Processes=1 # for dev it's easier
-if (Processes <= 1):
+# let's attempt to have a graphic processor to work for us with a little help from processing
+# https://discourse.processing.org/t/py-processing-with-pycharm/14236/3
+# C:\Prog\processing.py-3017-windows64>processing-py.bat examples.py\3D\Textures\TextureCube.py
+# C:\Prog\processing.py-3017-windows64\processing-py.bat "C:\Users\emman\Google Drive\Op\SphereByTriangle\Projection\VP\PycharmProjects\VProjSphere\TextureCube.py"
+# C:\Prog\processing.py-3017-windows64\processing-py.bat "C:\Users\emman\Google Drive\Op\SphereByTriangle\Projection\VP\PycharmProjects\VProjSphere\GlobalMapToSphere.py"
+#
+# https://github.com/AmnonOwed/P5_CanTut_GeometryTexturesShaders
+# https://github.com/Abdulla060/Processing.py-intellisense
+
+import os
+import sys
+import glob
+
+try:
+    from multiprocessing import Pool, cpu_count
+
+    Processes=cpu_count()
+    #Processes=1 # for dev it's easier
+    if (Processes <= 1):
+        Processes = 1
+except:
     Processes = 1
 
-try:
-    # https://pillow.readthedocs.io/en/4.0.x/reference/Image.html
-    from PIL import Image, ImageDraw
-except:
-    print ("consider \"pip install Pillow\"")
+#------------ link different libraries
 
+WithProcessing = False
 try:
-    # OpenSource Computer Vision
-    import cv2
-    #from cv2 import VideoWriter, VideoWriter_fourcc, imread, resize
+    # insert at 1, 0 is the script path (or '' in REPL)
+    sys.path.insert(1, 'C:\Prog\Processing.py-intellisense')
+    if False:
+        from lib.Processing3 import *
+    rotx = PI / 4 # TODO_LATER I'd prefer to check processing revision as proof about processing is availlable
+    WithProcessing = True
 except:
-    print ("consider \"pip install opencv-python\"")
-    # rem : got "WARNING: The script f2py.exe is installed in 'c:\python38-32\Scripts' which is not on PATH."
+    #print ("to run this https://py.processing.org/tutorials/command-line/ mode consider \"C:\Prog\processing.py-windows64\processing.py-3017-windows64>processing-py.bat ThisScript.py\"")
+    pass
 
+
+WithPil = False
+WithCv2 = False
+
+if (not WithProcessing):
+    try:
+        # https://pillow.readthedocs.io/en/4.0.x/reference/Image.html
+        from PIL import Image, ImageDraw
+        WithPil=True
+    except:
+        print ("consider \"pip install Pillow\"")
+    
+    try:
+        # OpenSource Computer Vision
+        import cv2
+        WithCv2=True
+    except:
+        print ("consider \"pip install opencv-python\"")
+        # rem : got "WARNING: The script f2py.exe is installed in 'c:\python38-32\Scripts' which is not on PATH."
+    
 try:
     from bigfloat import *
-    Pr=BigFloat.exact('0.0', precision=100)
+    Pr      = BigFloat.exact('0.0', precision=100)
     Epsilon = BigFloat.exact('0.000000000000000000001', precision=100)
 except:
-    Pr =0.0
+    Pr      = 0.0
     Epsilon = 0.000000001
 
 import math
@@ -42,7 +78,7 @@ start_time = time.time()
 pict_time = 0
 
 
-""" rayon de la sphere en m """
+""" rayon of th sphere in m """
 ThicMaterial=Pr+2.8/1000.0
 Ray = (5.0 / 2.0)-ThicMaterial/2.0
 EpaisCoque = 0.033
@@ -65,9 +101,9 @@ Params['DestPath'] = "../../../ResultMedia/"
 
 #Params['Source']="stsci-h-p1936b-f-3600x1800.jpg"
 #Params['Source']="MOLA_mercat_redim.jpg"
-#Params['Source']="MOLA_cylin.jpg"
+Params['Source']="MOLA_cylin.jpg"
 #Params['Source']="2kjKZ.png"
-Params['Source']="Vaches_de_race_montbéliarde.jpg"
+#Params['Source']="Vaches_de_race_montbeliarde.jpg"
 #Params['Source']="Grid.png"
 
 #Params['ResultSize'] = ( 3840, 2160) # (x,y) 4K UHD (youtube)
@@ -83,6 +119,12 @@ Params['AxisTilt'] = 25.19*2*Pi/360 # mars tilt axis
 Params['ResultFps'] = 25
 Params['ResultDuration'] = 4*60 # 4 min long video, accelerate on video edition if required
 Params['dAlpha'] = -(2.0*Pi)/(Params['ResultFps']*Params['ResultDuration']*1.0) # counterclockwise rotation like earth  and most planets except venus, uranus, neptune
+
+
+def printFix( Str, MySend='', MyFlush=True):
+    """ TODO_LATER : processing hate print with extra args so... try to trick with printFix """
+    # print( Str, flush=MyFlush, send=MySend)
+    pass
 
 #----------- math section
 
@@ -425,13 +467,14 @@ VPVectUp = VectSetNorm( VPVectUp)
 VpPtUp = AddScal( VPPtCenter, VPVectUp)
 
 #----------- image manip
-#image = ImageSource.open("C:/Users/emman/Google Drive/Op/SphereByTriangle/Projection/SourceMedia/stsci-h-p1936b-f-3600x1800.jpg")
-ImageSource = Image.open(Params['SourcePath']+Params['Source'])
-ImageSourcePx = ImageSource.load()
-ImageSourceSize = ImageSource.size
+if WithPil:
+    #image = ImageSource.open("C:/Users/emman/Google Drive/Op/SphereByTriangle/Projection/SourceMedia/stsci-h-p1936b-f-3600x1800.jpg")
+    ImageSource = Image.open(Params['SourcePath']+Params['Source'])
+    ImageSourcePx = ImageSource.load()
+    ImageSourceSize = ImageSource.size
 
-ImageResult=Image.new('RGB', (Params['ResultSize'][0], Params['ResultSize'][1]), (0, 0, 0)) # prepare an all black image
-ImageResultDraw = ImageDraw.Draw(ImageResult)
+    ImageResult=Image.new('RGB', (Params['ResultSize'][0], Params['ResultSize'][1]), (0, 0, 0)) # prepare an all black image
+    ImageResultDraw = ImageDraw.Draw(ImageResult)
 
 # before auto adjust
 ResultF = 1
@@ -584,8 +627,6 @@ def DirectTrace( GammaRotation):
             else:
                 Alpha = -Alp+3.0*Pi
 
-            Color = SourceGetColor( Alpha, GammaRotation, Beta, (DBet+DAlph)/2.0, Tilt)
-
             PtSph00 = AngulToScal( Alpha, Beta, Ray)
             PtSph01 = AngulToScal( Alpha, Beta+DBet, Ray)
             PtSph11 = AngulToScal( Alpha+DAlph, Beta+DBet, Ray)
@@ -607,6 +648,60 @@ def DirectTrace( GammaRotation):
         Beta = Beta2
     pict_time = time.time() - dt_start_time
     #ImageResult.show()
+
+def ProcessingTrace( GammaRotation):
+    global pict_time
+    Tilt = Params['AxisTilt']
+    dt_start_time = time.time()
+    Segs = 15.0
+    Beta=BetaBase
+
+    beginShape(QUADS)
+    texture(tex)
+
+    while ( Beta < Pi/2.0):
+        DBet = Pi/Segs
+        Beta2 = Beta + DBet
+        Alp = Pi
+        while( Alp < 2*Pi):
+            DAlph = Pi/(2*Segs)
+            if ( Alp < Pi): # draw left to middle then right to middle
+                Alpha = Pi
+            else:
+                Alpha = -Alp+3.0*Pi
+
+            Color = SourceGetColor( Alpha, GammaRotation, Beta, (DBet+DAlph)/2.0, Tilt)
+
+            PtSph00 = AngulToScal( Alpha, Beta, Ray)
+            PtSph01 = AngulToScal( Alpha, Beta+DBet, Ray)
+            PtSph11 = AngulToScal( Alpha+DAlph, Beta+DBet, Ray)
+            PtSph10 = AngulToScal( Alpha+DAlph, Beta, Ray)
+            #Chk = ScalToAngul(PtSph)
+            #if ( abs(Chk[0]-Alpha) > Epsilon):
+            #    print("Bad Alpha");
+            #if ( abs(Chk[1]-Beta) > Epsilon):
+            #    print("Bad Beta");
+            X00 = Map( Alpha      , 0, 2*Pi, 0, 1)
+            Y00 = Map( Beta       , Pi/2.0, -Pi/2.0, 0, 1)
+            X01 = Map( Alpha      , 0, 2*Pi, 0, 1)
+            Y01 = Map( Beta+DBet  , Pi/2.0, -Pi/2.0, 0, 1)
+            X11 = Map( Alpha+DAlph, 0, 2*Pi, 0, 1)
+            Y11 = Map( Beta+DBet  , Pi/2.0, -Pi/2.0, 0, 1)
+            X10 = Map( Alpha+DAlph, 0, 2*Pi, 0, 1)
+            Y10 = Map( Beta       , Pi/2.0, -Pi/2.0, 0, 1)
+
+            #ImageResultDraw.line( (PtX00, PtY00, PtX11, PtY11), fill=Color, width=5)
+            #ImageResultDraw.polygon(  (PtX00, PtY00, PtX01, PtY01, PtX11, PtY11, PtX10, PtY10) , fill=ColorFix(Color)) # TODO_HERE : test
+            # +Z "front" face
+            vertex( PtSph00[0],  PtSph00[1],  PtSph00[2], X00, Y00)
+            vertex( PtSph01[0],  PtSph01[1],  PtSph01[2], X01, Y01)
+            vertex( PtSph11[0],  PtSph11[1],  PtSph11[2], X11, Y11)
+            vertex( PtSph10[0],  PtSph10[1],  PtSph10[2], X10, Y10)
+        
+            Alp = Alp + DAlph
+        Beta = Beta2
+    endShape()
+    #pict_time = time.time() - dt_start_time
 
 def OneRay( Vx, Vy):
     """ Get (Alpha, Beta) on the sphere for a given fraction of right and up Vectoss"""
@@ -630,7 +725,8 @@ def RayTrace( GammaRotation):
         while(Y < 2*ResultDy):
             if (X==ResultDx and Y==ResultDy):
                 #ImageResult.show()
-                print("Mid", end='', flush=True)
+                printFix( "Mid") # processing hate print this way so... trick with printf
+                pass
             Vy = Map(Y, 0, 2*ResultDy, Mx, -Mx)
             Vy2 = Map(Y+1, 0, 2*ResultDy, Mx, -Mx)
             if (1): # TODO_LATER : first test it acts the same and not too slow
@@ -660,7 +756,7 @@ def RayTrace( GammaRotation):
             Y = Y+1
         if (Sth > 100000):
             #ImageResult.show()
-            print(".", end='', flush=True)
+            printFix( ".")  # processing hate print this way so... trick with printf
             Sth = 0
         X = X+1
     # ImgR0 = ImageResult.copy() # moyenner evite 50% le grain mais pas suffisant pour faire le flou de mouvement
@@ -679,7 +775,7 @@ def PictAndVid( ImgIdxStart, ImgModul):
     ImgVidIdx = 0
 
     vid = None
-    if (0 == ImgIdxStart):
+    if (WithCv2 and 0 == ImgIdxStart):
         size = None
         is_color = True
         format = "XVID"
@@ -689,8 +785,9 @@ def PictAndVid( ImgIdxStart, ImgModul):
     while(ImgIdx < ImgsMax):
         AddAlpha = ImgIdx * dAlpha
         #DirectTrace( AddAlpha)
-        RayTrace( AddAlpha)
-        ImageResult.save(Params['DestPath']+'Result_%i.jpeg' % ImgIdx, 'jpeg')
+        if WithPil :
+            RayTrace( AddAlpha)
+            ImageResult.save(Params['DestPath']+'Result_%i.jpeg' % ImgIdx, 'jpeg')
         ImgIdx += 1
 
         if (None == pict_time_R0):
@@ -704,8 +801,9 @@ def PictAndVid( ImgIdxStart, ImgModul):
         # http://www.xavierdupre.fr/blog/2016-03-30_nojs.html
         # http://www.fourcc.org/codecs.php
         # http://opencv-python-tutroals.readthedocs.org/en/latest/py_tutorials/py_gui/py_video_display/py_video_display.html
-        if (0 == ImgIdxStart): # only for process 1
+        if (WithPil and 0 == ImgIdxStart): # only for process 1
             ImageResult.save(Params['DestPath']+'Result.jpeg', 'jpeg') # must see intermediate result
+        if (WithCv2 and 0 == ImgIdxStart):  # only for process 1
             while (ImgVidIdx < ImgIdx and ImgVidIdx < ImgsMax):
                 Found = False
                 img = None
@@ -738,14 +836,16 @@ def PictAndVid( ImgIdxStart, ImgModul):
 
 def ProcessMe( PrNum):
     if(0 == PrNum):
-        print( "I'll Own Video")
+        if (WithCv2): # only for process 1
+            print("I'll Own Video")
+        else:
+            print("No CV2 ... No Video")
         PictAndVid( PrNum, Processes)
     else:
         print( "I'm process %i" % PrNum)
         PictAndVid( PrNum, Processes)
 
-
-if __name__ == '__main__':
+if __name__ == '__main__' and not WithProcessing:
     FileList = glob.glob("%sResult_*.jpeg" % (Params['DestPath']))
     for filePath in FileList:
         try:
@@ -763,3 +863,88 @@ if __name__ == '__main__':
     else:
         ProcessMe(0)
     print( "Done in %s" % StrDuration(time.time() - start_time))
+
+if (WithProcessing):
+        """
+         * TexturedCube
+         * based on pde example by Dave Bollinger.
+         * 
+         * Drag mouse to rotate cube. Demonstrates use of u/v coords in 
+         * vertex() and effect on texture().
+        """
+        rotx = PI / 4
+        roty = PI / 4
+        rate = 0.01
+
+def TexturedCube():
+        beginShape(QUADS)
+        texture(tex)
+        # Given one texture and six faces, we can easily set up the uv coordinates
+        # such that four of the faces tile "perfectly" along either u or v, but the other
+        # two faces cannot be so aligned.    This code tiles "along" u, "around" the X / Z faces
+        # and fudges the Y faces - the Y faces are arbitrarily aligned such that a
+        # rotation along the X axis will put the "top" of either texture at the "top"
+        # of the screen, but is not otherwised aligned with the X / Z faces. (This
+        # just affects what type of symmetry is required if you need seamless
+        # tiling all the way around the cube)
+
+        # +Z "front" face
+        vertex(-1, -1, 1, 0, 0.2)
+        vertex(1, -1, 1, 1, 0)
+        vertex(1, 1, 1, 1, 1)
+        vertex(-1, 1, 1, 0, 1)
+        # -Z "back" face
+        vertex(1, -1, -1, 0, 0)
+        vertex(-1, -1, -1, 1, 0)
+        vertex(-1, 1, -1, 1, 1)
+        vertex(1, 1, -1, 0, 1)
+        # +Y "bottom" face
+        vertex(-1, 1, 1, 0, 0)
+        vertex(1, 1, 1, 1, 0)
+        vertex(1, 1, -1, 1, 1)
+        vertex(-1, 1, -1, 0, 1)
+        # -Y "top" face
+        vertex(-1, -1, -1, 0, 0)
+        vertex(1, -1, -1, 1, 0)
+        vertex(1, -1, 1, 1, 1)
+        vertex(-1, -1, 1, 0, 1)
+        # +X "right" face
+        vertex(1, -1, 1, 0, 0)
+        vertex(1, -1, -1, 1, 0)
+        vertex(1, 1, -1, 1, 1)
+        vertex(1, 1, 1, 0, 1)
+        # -X "left" face
+        vertex(-1, -1, -1, 0, 0)
+        vertex(-1, -1, 1, 1, 0)
+        vertex(-1, 1, 1, 1, 1)
+        vertex(-1, 1, -1, 0, 1)
+        endShape()
+
+def setup():
+    #if (WithProcessing):
+            size( Params['ResultSize'][0], Params['ResultSize'][1], OPENGL)
+            textureMode(NORMAL)
+            fill(255)
+            stroke(color(44, 48, 32))
+            global tex
+            #tex = loadImage( "../"+Params['SourcePath']+Params['Source'])
+            #tex = loadImage( "C:\\Users\\emman\\Google Drive\\Op\\SphereByTriangle\\Projection\\SourceMedia\\"+Params['Source'])
+            tex = loadImage( "C:\\Users\\emman\\Google Drive\\Op\\SphereByTriangle\\Projection\\SourceMedia\\Vaches_de_race_montbeliarde.jpg")
+
+
+
+if (WithProcessing):
+    def draw():
+            background(0)
+            noStroke()
+            translate(width / 2.0, height / 2.0, -100)
+            rotateX(rotx)
+            rotateY(roty)
+            scale(90)
+            ProcessingTrace( 0.0)
+            #TexturedCube()
+
+    def mouseDragged():
+            global rotx, roty
+            rotx += (pmouseY - mouseY) * rate
+            roty += (mouseX - pmouseX) * rate
